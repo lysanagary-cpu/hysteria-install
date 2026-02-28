@@ -366,68 +366,10 @@ inst_pwd(){
     yellow "使用在 Hysteria 2 节点的密码为：$auth_pwd"
 }
 
-# 设置伪装网站 (自动检测可用性)
+# 设置伪装网站
 inst_site(){
-    green "正在自动检测可用的伪装网站..."
-    echo ""
-
-    # 候选伪装网站列表
-    local sites=(
-        "www.wikipedia.org"
-        "www.yahoo.com"
-        "www.speedtest.net"
-        "www.amazon.com"
-        "www.bing.com"
-        "news.ycombinator.com"
-        "www.github.com"
-        "www.cloudflare.com"
-        "www.apple.com"
-        "www.microsoft.com"
-    )
-
-    local available_sites=()
-    local idx=0
-
-    for site in "${sites[@]}"; do
-        local http_code=$(curl -o /dev/null -s -w '%{http_code}' --max-time 5 "https://$site" 2>/dev/null)
-        if [[ $http_code -ge 200 ]] && [[ $http_code -lt 400 ]]; then
-            idx=$((idx + 1))
-            available_sites+=("$site")
-            echo -e " ${GREEN}${idx}.${PLAIN} $site ${GREEN}✓ (HTTP $http_code)${PLAIN}"
-        else
-            echo -e "    $site ${RED}✗ (HTTP $http_code)${PLAIN}"
-        fi
-    done
-
-    echo ""
-
-    if [[ ${#available_sites[@]} -gt 0 ]]; then
-        green "检测到 ${#available_sites[@]} 个可用网站，推荐使用: ${available_sites[0]}"
-        echo ""
-        echo -e " ${GREEN}0.${PLAIN} 使用推荐: ${available_sites[0]} ${YELLOW}（默认）${PLAIN}"
-        for i in "${!available_sites[@]}"; do
-            echo -e " ${GREEN}$((i + 1)).${PLAIN} ${available_sites[$i]}"
-        done
-        echo -e " ${GREEN}c.${PLAIN} 自定义输入"
-        echo ""
-        read -rp "请选择 [0-${#available_sites[@]}/c] (回车使用推荐): " siteChoice
-
-        if [[ -z $siteChoice ]] || [[ $siteChoice == "0" ]]; then
-            proxysite="${available_sites[0]}"
-        elif [[ $siteChoice == "c" ]] || [[ $siteChoice == "C" ]]; then
-            read -rp "请输入自定义伪装网站地址（去除https://）：" proxysite
-            [[ -z $proxysite ]] && proxysite="${available_sites[0]}"
-        elif [[ $siteChoice =~ ^[0-9]+$ ]] && [[ $siteChoice -le ${#available_sites[@]} ]] && [[ $siteChoice -ge 1 ]]; then
-            proxysite="${available_sites[$((siteChoice - 1))]}"
-        else
-            proxysite="${available_sites[0]}"
-        fi
-    else
-        yellow "未检测到可用网站，请手动输入"
-        read -rp "请输入伪装网站地址（去除https://）：" proxysite
-        [[ -z $proxysite ]] && proxysite="www.wikipedia.org"
-    fi
-
+    read -rp "请输入 Hysteria 2 的伪装网站地址 （去除https://） [回车默认 news.ycombinator.com]：" proxysite
+    [[ -z $proxysite ]] && proxysite="news.ycombinator.com"
     yellow "使用在 Hysteria 2 节点的伪装网站为：$proxysite"
 }
 
