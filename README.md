@@ -7,7 +7,7 @@
 ## 一键安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/lysanagary-cpu/hysteria-install/main/hy2/hysteria.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/lysanagary-cpu/hysteria-install/master/hy2/hysteria.sh)
 ```
 
 
