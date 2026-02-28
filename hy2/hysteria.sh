@@ -76,6 +76,120 @@ get_installed_version(){
     fi
 }
 
+# 检测系统架构
+get_arch(){
+    case "$(uname -m)" in
+        x86_64 | amd64 ) echo 'amd64' ;;
+        i686 | i386 ) echo '386' ;;
+        armv7l | armv6l ) echo 'arm' ;;
+        aarch64 | arm64 ) echo 'arm64' ;;
+        s390x ) echo 's390x' ;;
+        mips64le ) echo 'mipsle' ;;
+        riscv64 ) echo 'riscv64' ;;
+        * ) echo 'amd64' ;;
+    esac
+}
+
+# 安装 Hysteria 2 二进制文件 (多源下载，自动回退)
+install_hysteria_binary(){
+    local arch=$(get_arch)
+    local installed=false
+
+    # 方式1: 官方安装脚本
+    green "[1/3] 尝试使用官方脚本安装..."
+    if bash <(curl -fsSL https://get.hy2.sh/) 2>/dev/null; then
+        if [[ -f "/usr/local/bin/hysteria" ]]; then
+            installed=true
+        fi
+    fi
+
+    # 方式2: 官方下载站直接下载
+    if [[ $installed == false ]]; then
+        yellow "官方脚本安装失败，尝试从官方下载站直接下载..."
+        green "[2/3] 从 download.hysteria.network 下载..."
+        if curl -L -o /tmp/hysteria --retry 3 --retry-delay 3 -m 60 "https://download.hysteria.network/app/latest/hysteria-linux-${arch}" 2>/dev/null; then
+            if [[ -s /tmp/hysteria ]]; then
+                install -Dm755 /tmp/hysteria /usr/local/bin/hysteria
+                rm -f /tmp/hysteria
+                installed=true
+            fi
+        fi
+    fi
+
+    # 方式3: GitHub 代理镜像
+    if [[ $installed == false ]]; then
+        yellow "官方下载站也失败了，尝试 GitHub 代理镜像..."
+        green "[3/3] 从 GitHub 代理镜像下载..."
+        local mirrors=(
+            "https://ghproxy.cc/https://github.com/apernet/hysteria/releases/download/app/v2.7.1/hysteria-linux-${arch}"
+            "https://gh-proxy.com/https://github.com/apernet/hysteria/releases/download/app/v2.7.1/hysteria-linux-${arch}"
+            "https://mirror.ghproxy.com/https://github.com/apernet/hysteria/releases/download/app/v2.7.1/hysteria-linux-${arch}"
+        )
+        for mirror_url in "${mirrors[@]}"; do
+            yellow "尝试镜像: $mirror_url"
+            if curl -L -o /tmp/hysteria --retry 2 --retry-delay 3 -m 120 "$mirror_url" 2>/dev/null; then
+                if [[ -s /tmp/hysteria ]]; then
+                    install -Dm755 /tmp/hysteria /usr/local/bin/hysteria
+                    rm -f /tmp/hysteria
+                    installed=true
+                    break
+                fi
+            fi
+        done
+    fi
+
+    # 如果所有方式都失败，提示用户手动下载
+    if [[ $installed == false ]]; then
+        red "所有下载方式均失败！"
+        yellow "请手动下载 Hysteria 2 二进制文件："
+        yellow "  下载地址: https://download.hysteria.network/app/latest/hysteria-linux-${arch}"
+        yellow "  放置路径: /usr/local/bin/hysteria"
+        yellow "  赋权命令: chmod +x /usr/local/bin/hysteria"
+        exit 1
+    fi
+
+    # 创建 systemd 服务文件 (如果不存在)
+    if [[ ! -f /etc/systemd/system/hysteria-server.service ]]; then
+        cat << 'SEOF' > /etc/systemd/system/hysteria-server.service
+[Unit]
+Description=Hysteria Server Service (config.yaml)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria server --config /etc/hysteria/config.yaml
+WorkingDirectory=/etc/hysteria
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+SEOF
+        systemctl daemon-reload
+    fi
+
+    if [[ ! -f /etc/systemd/system/hysteria-server@.service ]]; then
+        cat << 'SEOF' > /etc/systemd/system/hysteria-server@.service
+[Unit]
+Description=Hysteria Server Service (%i.yaml)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria server --config /etc/hysteria/%i.yaml
+WorkingDirectory=/etc/hysteria
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+SEOF
+        systemctl daemon-reload
+    fi
+}
+
 # 证书申请
 inst_cert(){
     green "Hysteria 2 协议证书申请方式如下："
@@ -278,9 +392,8 @@ insthysteria(){
     fi
     ${PACKAGE_INSTALL[int]} curl wget sudo qrencode procps iptables-persistent netfilter-persistent openssl
 
-    # 使用官方安装脚本安装 Hysteria 2
-    green "正在使用官方脚本安装 Hysteria 2..."
-    bash <(curl -fsSL https://get.hy2.sh/)
+    # 安装 Hysteria 2 (多源下载，自动回退)
+    install_hysteria_binary
 
     if [[ -f "/usr/local/bin/hysteria" ]]; then
         green "Hysteria 2 安装成功！"
@@ -494,8 +607,14 @@ unsthysteria(){
     systemctl stop hysteria-server.service >/dev/null 2>&1
     systemctl disable hysteria-server.service >/dev/null 2>&1
 
-    # 使用官方脚本卸载
-    bash <(curl -fsSL https://get.hy2.sh/) --remove
+    # 尝试使用官方脚本卸载，失败则手动移除
+    bash <(curl -fsSL https://get.hy2.sh/) --remove 2>/dev/null || {
+        yellow "官方卸载脚本不可用，手动移除..."
+        rm -f /usr/local/bin/hysteria
+        rm -f /etc/systemd/system/hysteria-server.service
+        rm -f /etc/systemd/system/hysteria-server@.service
+        systemctl daemon-reload
+    }
 
     rm -rf /etc/hysteria /root/hy /root/hysteria.sh
     iptables -t nat -F PREROUTING >/dev/null 2>&1
@@ -671,9 +790,15 @@ showlog(){
 
 # 更新 Hysteria 2 内核
 update_core(){
-    green "正在使用官方脚本更新 Hysteria 2..."
-    bash <(curl -fsSL https://get.hy2.sh/)
+    green "正在更新 Hysteria 2..."
+    install_hysteria_binary
     green "Hysteria 2 更新完成！当前版本: $(get_installed_version)"
+
+    # 重启运行中的服务
+    if [[ -n $(systemctl status hysteria-server 2>/dev/null | grep -w active) ]]; then
+        systemctl restart hysteria-server
+        green "Hysteria 2 服务已自动重启"
+    fi
 }
 
 # 主菜单
