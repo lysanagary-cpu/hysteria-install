@@ -7,10 +7,9 @@
 ## 一键安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/USERNAME/hysteria-install/main/hy2/hysteria.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/lysanagary-cpu/hysteria-install/main/hy2/hysteria.sh)
 ```
 
-> ⚠️ 请将 `USERNAME` 替换为你的 GitHub 用户名。
 
 ## 功能特点
 
